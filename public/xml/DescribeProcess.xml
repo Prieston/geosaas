@@ -1,0 +1,823 @@
+var WMSLayers = [];
+
+function WMS(){
+	var source;
+	var dataAdapter;
+	//repeat the request as many times as the servers length
+	for (var c = 0; c < Server.length; c++){
+		var count = 0;
+		request(c,count)
+	};
+
+/*============================================================================*/
+/*======================= MAKE THE REQUEST FOR WMS ===========================*/
+/*============================================================================*/
+
+	function request(i,count){
+	
+		var url = 
+			Server[i].linkYQL + 
+			'service%3Dwms%26'+
+			Request["getCapabilities"];
+
+		//set the request properties
+		var req = {
+			"type"    :"GET",
+			"dataType":"XML",
+			"data"    : null,
+			"url"     : url
+		};
+
+		//make the request (ajax.js)
+		ajax(req,ajaxSuccess,ajaxError);
+
+		//log information about the request in the messages pane
+		//for the first attemp
+		if(count==0){
+			$("#messages").append(
+				'<span style="color:blue">' +
+				getFullTime() + 
+				'</span> Request data from: ' +
+				'<a style="color:grey;text-decoration:none;" href ="' +
+				url +
+				'" target="_blank">' +
+				Server[i].link + 
+				Request["getCapabilities"] +
+				'</a><br>'
+			);
+		};
+
+		//callback function if the request succeeds
+		function ajaxSuccess(xhr,data){
+			//yahoo query request may respond succesfuly 
+			//but with no data
+			//that why we need to test the data coming in the response
+			var xmlObj = xmlToJson(data);//xmlToJson.js
+			console.log(xmlObj);
+			xmlObj = xmlObj.query.results.WMS_Capabilities;
+			if (typeof xmlObj == "undefined"){
+				ajaxError(xhr);
+				return;
+			}
+			$("#messages").append(
+				'<span style="color:blue">' +
+				getFullTime() + 
+				'</span> Response HTTP status <b>' + 
+				xhr.status + 
+				' [' + xhr.statusText + ']' +
+				'</b> from:' +
+				' <a style="color:grey;text-decoration:none;" href="' +
+				url+
+				'" target="_blank">'+
+				Server[i].link + 
+				Request["getCapabilities"]+
+				'</a><br><span style="color:green">Success!</span><br>'
+			);
+
+			//create the wms
+			createWMS(data, Server[i],i);
+		};
+
+		//callback function if the request fails
+		function ajaxError(xhr){ 
+			if(count>1){
+				i++;
+				request(i);
+			};
+			count++;
+
+			//repeat the request if error for 2 times
+			if(count<=1){
+				$("#messages").append(
+					'<span style = "color:blue">' +
+					getFullTime() +
+					'</span> Response HTTP status <b>' +
+					xhr.status + 
+					' [' + xhr.statusText + '] </b> from: ' +
+					'<a style="color:grey;text-decoration:none; href="' +
+					url +'" target="_blank">'+
+					Server[i].link + 
+					Request["getCapabilities"] + 
+					'</a>'+
+					'A new response message will appear if '+
+					'connection will establish. Retrying connection...<br>'
+				);
+				request(i);
+			 }else{
+			 	$("#messages").append(
+					'<span style = "color:blue">' +
+					getFullTime() +
+					'</span> Cannot reach: ' +
+					'<a style="color:grey;text-decoration:none; href="' +
+					url +'" target="_blank">'+
+					Server[i].link + 
+					Request["getCapabilities"] + 
+					'</a>'+
+					'<br><span style="color:red">Error!</span><br>'
+				);
+			 }
+		};
+
+	};
+
+/*============================================================================*/
+/*======================= READY THE DATA FOR THE TABLE =======================*/
+/*============================================================================*/
+
+	function createWMS(data,server,n){
+
+		convertXML();
+
+		function convertXML(){
+
+			var xmlObj = xmlToJson(data);//xmlToJson.js
+			console.log(xmlObj);
+			xmlObj = xmlObj.query.results.WMS_Capabilities;
+			console.log("convertXML");
+
+				createData(xmlObj);
+		}
+		
+		function createData(xmlObj){
+			for (var i = 0; i < xmlObj.Capability.Layer.Layer.length; i++){
+				var row={};
+				row = xmlObj.Capability.Layer.Layer[i];
+
+				//add properties from parent to child
+				row.Exception = { 
+					Format: xmlObj.Capability.Exception.Format 
+				}
+				row.Request = {
+					GetMap:{
+						Format:xmlObj.Capability.Request.GetMap.Format
+					}
+				}
+				row.server = {
+					link:server.link,
+					name:server.name
+				}
+				row.version = xmlObj['@attributes'].version
+				WMSLayers.push(row);
+			};
+
+			console.log("createdata",WMSLayers)
+			
+			finish();
+		}
+
+		function finish(){
+			// console.log(n == Server.length-1)
+			if (!$('#wms_layers').jqxGrid('getdatainformation')){
+				console.log("yes inside")
+				createTable();
+			}
+			else{
+				console.log(WMSLayers)
+				source.localdata =WMSLayers;
+				dataAdapter.dataBind();
+				 $('#wms_layers').jqxGrid('updatebounddata');
+			}
+
+		}
+	};
+
+/*============================================================================*/
+/*==================== CREATE THE TABLE WITH LAYER DATA ======================*/
+/*============================================================================*/
+
+	function createTable(){
+				
+/*---- set rows details ----*/
+		$("#wms_layers").on('bindingcomplete', function (event){
+
+			$("#wms_layers").jqxGrid('beginupdate');
+			var datainformation = $("#wms_layers")
+				.jqxGrid('getdatainformation');
+
+			for (i = 0; i < datainformation.rowscount; i++) {
+				$("#wms_layers").jqxGrid('setrowdetails', i,
+					"<div id='wms_layers_sub' class='subgrid' "+
+					"style='background-color:#f0f0f0'></div>", 155, true);
+			};
+			$("#wms_layers").jqxGrid('endupdate');
+
+		});
+
+/*---- create nested grid ----*/
+		var initlevel2 = function (index, parentElement){
+
+			var details = $($(parentElement).children()[0]);
+			details.css("overflow","auto");
+			details.append(
+				"<table style='border-style: ridge;"+
+					"border:1px solid #d2d2d2;width:100%;"+
+					"border-collapse: separate;border-spacing: 2px 2px;'>"+
+				"<tr>"+
+					"<th class = 'gws_details_name'>Style Name:</th>"+
+					"<td class = 'gws_details_value' id = 'wms_style"+index+
+						"'></td>"+
+					"<th class = 'gws_details_name'>CRS:</th>"+
+					"<td class = 'gws_details_value' id = 'wms_crs"+index+
+						"'></td>"+
+				"</tr>"+
+				"<tr>"+
+					"<th class = 'gws_details_name'>Transparent:</th>"+
+					"<td class = 'gws_details_value' id = 'wms_transparent"+
+						index+"'></td>"+
+					"<th class = 'gws_details_name'>Exceptions:</th>"+
+					"<td class = 'gws_details_value' id = 'wms_exception"+
+						index+"'></td>"+
+				"</tr>"+
+				"<tr>"+
+					"<th class = 'gws_details_name' >Background color:</th>"+
+					"<td class = 'gws_details_value' id='dropDownButton"+
+						index+"'><div id='colorPicker"+index+"'></div></td>"+
+					"<th class = 'gws_details_name'>Format:</th>"+
+					"<td class = 'gws_details_value' id='wms_format"+
+						index+"'></td>"+
+				"<tr>"+
+					"<th class = 'gws_details_name' >Width/Height:</th>"+
+					"<td class = 'gws_details_value' style='text-align:center'"+
+						"id = 'wms_widthheight'><input id =  'wms_width_value"+
+						index+"' style='float:left;'></input>:<input "+
+						"style='float:right;' id='wms_height_value"+
+						index+"'></input></td>"+
+					"<th class='gws_details_name' rowspan='2'>Dimensions:</th>"+
+					"<td class='gws_details_value' id = 'wms_dimensions"+
+						index+"'></td>"+
+				"</tr>"+
+				"<tr>"+
+					"<th class = 'gws_details_name'>Server:</th>"+
+					"<td class = 'gws_details_value' style='text-align:center'"+
+						" id = 'servername"+index+"'></td>"+
+					"<td class = 'gws_details_value'><input "+
+					"id ='wms_otherdimension"+index+"'></input></td>"+
+				"</tr>"+
+				"</table>"
+			);
+			
+			//add the name of the server at the server link cell
+			 $("#servername"+index).append(
+			 	"<a href=" + WMSLayers[index].server.link + ">" +
+			 		 WMSLayers[index].server.name + "</a>"
+			 );
+			
+/*========================================================================*/
+/*===================CREATE THE OBJECT WITH LAYER DATA====================*/
+/*========================================================================*/
+			//check if the object is an array
+			function isArray(element){
+				var ret;
+				try		{ret = element.constructor === Array}
+				catch(e){ret = false};
+				console.log("isarray",ret,element);
+				return ret;
+			};
+
+
+
+/*---- add the CRS to cell----*/
+			var select = document.createElement("select");
+			select.setAttribute("id", "wms_crs_value"+index);
+
+			if(isArray(WMSLayers[index].CRS)){
+				for (var q = 0; q < WMSLayers[index].CRS.length; q++){
+					var option = document.createElement("option");
+					var t = document.createTextNode(WMSLayers[index]
+							.CRS[q]['#text']);
+					option.appendChild(t);
+					select.appendChild(option);
+				};
+			}
+			else if(WMSLayers[index].CRS){
+				var option = document.createElement("option");
+				var t = document.createTextNode(WMSLayers[index].CRS['#text']);
+				option.appendChild(t);
+				select.appendChild(option);
+			}
+			else{
+				var option = document.createElement("option");
+				var t = document.createTextNode("emty");
+				option.appendChild(t);
+				select.appendChild(option);
+			};
+			document.getElementById("wms_crs"+index).appendChild(select);
+
+
+
+/*---- add the STYLE to cell ----*/
+			var select = document.createElement("select");
+			select.setAttribute("id", "wms_style_value"+index);
+			if(isArray(WMSLayers[index].Style)){
+				for (var q = 0; q < WMSLayers[index].Style.length; q++){
+					var option = document.createElement("option");
+					var t = document.createTextNode(WMSLayers[index].Style[q]
+						.Name["#text"]);
+					option.appendChild(t);
+					select.appendChild(option);
+				};
+			}
+			else if(WMSLayers[index].Style){
+				var option = document.createElement("option");
+				var t = document.createTextNode(WMSLayers[index].Style
+					.Name["#text"]);
+				option.appendChild(t);
+				select.appendChild(option);
+			}
+			else{
+				var option = document.createElement("option");
+				var t = document.createTextNode("empty");
+				option.appendChild(t);
+				select.appendChild(option);
+			};
+			document.getElementById("wms_style"+index).appendChild(select);
+
+
+
+/*---- add the EXCEPTION to cell ----*/
+			var select = document.createElement("select");
+			select.setAttribute("id", "wms_exception_value"+index);
+			if(isArray(WMSLayers[index].Exception.Format)){//if array
+				for (var q = 0; q < WMSLayers[index].Exception.Format
+					.length;q++){
+					var option = document.createElement("option");
+					var t = document.createTextNode(WMSLayers[index]
+						.Exception.Format[q]['#text']);
+					option.appendChild(t);
+					select.appendChild(option);
+				};
+			}
+			else if(WMSLayers[index].Exception.Format){//if single
+				var option = document.createElement("option");
+				var t = document.createTextNode(WMSLayers[index]
+					.Exception.Format['#text']);
+				option.appendChild(t);
+				select.appendChild(option);
+			}
+			else{//if empty
+				var option = document.createElement("option");
+				var t = document.createTextNode("empty");
+				option.appendChild(t);
+				select.appendChild(option);
+			};
+			document.getElementById("wms_exception"+index).appendChild(select);
+
+
+
+/*---- add the GETMAP to cell ----*/
+			var select = document.createElement("select");
+			if(isArray(WMSLayers[index].Request.GetMap.Format)){//if array
+				for (var q = 0; q < WMSLayers[index].Request.GetMap.Format
+					.length; q++){
+					var option = document.createElement("option");
+					var t = document.createTextNode(WMSLayers[index].Request
+						.GetMap.Format[q]['#text']);
+					option.appendChild(t);
+					select.appendChild(option);
+				};
+			}
+			else if(WMSLayers[index].Request.GetMap.Format){//if single
+				var option = document.createElement("option");
+				var t = document.createTextNode(WMSLayers[index].Request
+					.GetMap.Format['#text']);
+				option.appendChild(t);
+				select.appendChild(option);
+			}
+			else{//if empty
+				var option = document.createElement("option");
+				var t = document.createTextNode("empty");
+				option.appendChild(t);
+				select.appendChild(option);
+			};
+			document.getElementById("wms_format"+index).appendChild(select);
+
+
+
+/*---- add the DIMENSION to cell ----*/ 
+			//not tested cause of inavailable data
+			var select = document.createElement("select");
+			if(isArray(WMSLayers[index].Dimension)){//if array
+				for (var q = 0; q < WMSLayers[index].Dimension.length; q++){
+					var option = document.createElement("option");
+					var t = document.createTextNode(WMSLayers[index]
+						.Dimension[q]["@attributes"].name);
+					option.appendChild(t);
+					select.appendChild(option);
+				};
+			}
+			else if(WMSLayers[index].Dimension){//if single
+				var option = document.createElement("option");
+					var t = document.createTextNode(WMSLayers[index]
+						.Dimension["@attributes"].name);
+					option.appendChild(t);
+					select.appendChild(option);
+			}
+			else{//if empty
+				var option = document.createElement("option");
+				var t = document.createTextNode("empty");
+				option.appendChild(t);
+				select.appendChild(option);
+
+				$("#wms_elevation"+index).prop( "disabled", true );
+				$("#wms_time"+index).prop( "disabled", true );
+				$("#wms_otherdimension"+index).prop( "disabled", true );
+				$("#wms_elevation"+index).val("<no data>");
+				$("#wms_time"+index).val("<no data>");
+				$("#wms_otherdimension"+index).val("<no data>");
+			};
+			document.getElementById("wms_dimensions"+index).appendChild(select);
+
+			var q = 0;
+			var select = document.createElement("select");
+
+
+
+/*---- add the WIDTH AND HEIGHT to cell ----*/ 
+/*---- also control the ratio of width and height ----*/ 
+
+			var e = document.getElementById("wms_crs_value"+index);
+			var strUser = e.options[e.selectedIndex].value;
+			if(isArray(WMSLayers.BoundingBox)){//if array
+				do {
+					if (WMSLayers[index].BoundingBox[q]["@attributes"]
+							.CRS == strUser){
+						var width = Math.sqrt(Math.pow(WMSLayers[index]
+							.BoundingBox[q]["@attributes"].maxx -
+							 WMSLayers[index]
+							.BoundingBox[q]["@attributes"].minx,2));
+						var height = Math.sqrt(Math.pow(WMSLayers[index]
+							.BoundingBox[q]["@attributes"].maxy -
+							 WMSLayers[index]
+							.BoundingBox[q]["@attributes"].miny,2));
+						ratio = width/height;
+						$("#wms_width_value"+index).val(500);
+						$("#wms_height_value"+index).val(Math.round(500*ratio));
+						//change width and height
+						$("#wms_width_value"+index).on("change",function(){
+							var round = Math.round($("#wms_width_value"+index)
+								.val());
+							$("#wms_width_value"+index).val(round);
+							$("#wms_height_value"+index).val(Math.round(
+								$("#wms_width_value"+index).val()*ratio));
+						});
+						$("#wms_height_value"+index).on("change",function(){
+							var round = Math.round($("#wms_height_value"+index)
+								.val());
+							$("#wms_height_value"+index).val(round);
+							$("#wms_width_value"+index).val(Math.round(
+								$("#wms_height_value"+index).val()/ratio));
+						});
+						$("#wms_widthheight"+index).on("click",function(){
+							$("#wms_help_box"+index).html("<label "+
+								"style='font-weight:bold'>Selected layer "+
+								"Width and Height:</label><br/>The selected "+
+								"layer image ratio is WIDTH/HEIGHT: "+
+								ratio.toFixed(2) +". "+
+								"This information produced from the bounding"+
+								" box data. The width and height are rounded"+
+								" for the pixels to be integer numbers")
+						});
+						break;
+					};
+					q++;
+				} while(q < WMSLayers[index].BoundingBox.length);
+			}
+			else if(WMSLayers.BoundingBox){//if single
+				var width = Math.sqrt(Math.pow(WMSLayers[index]
+					.BoundingBox["@attributes"].maxx - WMSLayers[index]
+					.BoundingBox["@attributes"].minx,2));
+				var height = Math.sqrt(Math.pow(WMSLayers[index]
+					.BoundingBox["@attributes"].maxy - WMSLayers[index]
+					.BoundingBox["@attributes"].miny,2));
+				ratio = width/height;
+				$("#wms_width_value"+index).val(500);
+				$("#wms_height_value"+index).val(Math.round(500*ratio));
+				//change width and height
+				$("#wms_width_value"+index).on("change",function(){
+					var round = Math.round($("#wms_width_value"+index)
+						.val());
+					$("#wms_width_value"+index).val(round);
+					$("#wms_height_value"+index).val(Math.round($(
+						"#wms_width_value"+index).val()*ratio));
+				});
+				$("#wms_height_value"+index).on("change",function(){
+					var round = Math.round($("#wms_height_value"+index)
+						.val());
+					$("#wms_height_value"+index).val(round);
+					$("#wms_width_value"+index).val(Math.round(
+						$("#wms_height_value"+index).val()/ratio));
+				});
+				$("#wms_widthheight"+index).on("click",function(){
+					$("#wms_help_box"+index).html("<label "+
+						"style='font-weight:bold'>Selected layer Width "+
+						"and Height:</label><br/>The selected layer image "+
+						"ratio is WIDTH/HEIGHT: "+ratio.toFixed(2) +
+						". This information produced from the bounding "+
+						"box data. The width and height are rounded for "+
+						"the pixels to be integer numbers"
+					)
+				});
+			}
+			else{//if empty
+				$("#wms_width_value"+index).val(500);
+				$("#wms_height_value"+index).val(500);
+			};
+		
+			
+
+			if(isArray(WMSLayers[index].Dimension)){//if array
+/*---- add the DIMENSION NAME to cell ----*/ 
+				var q=0;
+				do {
+					var option = document.createElement("option");
+					var t = document.createTextNode(WMSLayers[index]
+						.Dimension[q]["@attributes"].name);
+					if ("elevation".toUpperCase() !== WMSLayers[index]
+							.Dimension[q]["@attributes"].name.toUpperCase() && 
+							"time".toUpperCase() !== WMSLayers[index]
+							.Dimension[q]["@attributes"].name.toUpperCase()){
+
+						option.appendChild(t);
+						select.appendChild(option);
+						q++;
+					};
+				} while(q < WMSLayers[index].Dimension.length);
+			}
+			else if(WMSLayers[index].Dimension){
+				var option = document.createElement("option");
+					var t = document.createTextNode(WMSLayers[index]
+						.Dimension["@attributes"].name);
+					if ("elevation".toUpperCase() !== WMSLayers[index]
+							.Dimension["@attributes"].name.toUpperCase() && 
+							"time".toUpperCase() !== WMSLayers[index]
+							.Dimension["@attributes"].name.toUpperCase()){
+
+						option.appendChild(t);
+						select.appendChild(option);
+					}
+			}
+			else{
+				var option = document.createElement("option");
+					var t = document.createTextNode("empty");
+					option.appendChild(t);
+					select.appendChild(option);
+			}
+
+			// document.getElementById("wms_dimensions"+index).appendChild(select);
+			var select = document.createElement("select");
+			var option_true = document.createElement("option");
+			var t = document.createTextNode("true");
+			option_true.appendChild(t);
+			select.appendChild(option_true);
+			var option_false = document.createElement("option");
+			var t = document.createTextNode("false");
+			option_false.appendChild(t);
+			select.appendChild(option_false);
+			document.getElementById("wms_transparent"
+				+index).appendChild(select);
+
+
+
+			(function(){
+				$("#colorPicker"+index).on('colorchange', function (event){
+					$("#dropDownButton"+index).jqxDropDownButton('setContent',
+						 getTextElementByColor(event.args.color));
+				});
+				$("#colorPicker"+index).jqxColorPicker({ color: "ffaabb",
+					 colorMode: 'hue', width: 220, height: 220});
+				$("#dropDownButton"+index).jqxDropDownButton();
+				$("#dropDownButton"+index).jqxDropDownButton('setContent',
+				 	getTextElementByColor(new $.jqx.color({ hex: "ffffff" })));
+			})();
+
+
+
+			function getTextElementByColor (color){
+				if (color == 'transparent' || color.hex == "") {
+					return $("<div style='text-shadow: none; "+
+						"position: relative; padding-bottom: 2px; "+
+						"margin-top: 2px;'>transparent</div>");
+				};
+
+				var element = $("<div id = 'wms_bgcolor" + index +
+				 "'style='text-shadow: none; position: relative; "+
+				 "padding-bottom: 2px; margin-top: 2px;'>0x" + color.hex +
+				  "</div>");
+				var nThreshold = 105;
+				var bgDelta = (color.r * 0.299) + (color.g * 0.587) 
+					+ (color.b * 0.114);
+				var foreColor = (255 - bgDelta < nThreshold) ?
+					 'Black' : 'White';
+				element.css('color', foreColor);
+				element.css('background', "#" + color.hex);
+				element.addClass('jqx-rc-all');
+				return element;
+			};
+
+
+
+			$('.gws_details_name').on('click',function(){
+				var name = this.innerHTML;
+				if(name=="Style Name:") $('#wms_help_box').html("<label "+
+					"style='font-weight:bold'>Style Name:</label><br/>The "+
+					"STYLES parameter lists the style in which each layer is "+
+					"to be rendered.");
+				else if(name=="CRS:") $('#wms_help_box').html("<label "+
+					"style='font-weight:bold'>CRS:</label><br/>The Coordinate "+
+					"Reference System parameter states what Layer CRS applies"+
+					" to the BBOX  parameter.");
+				else if(name=="Width/Height:") $('#wms_help_box').html(
+					"<label style='font-weight:bold'>Width/Height:</label>"+
+					"<br/>The WIDTH and HEIGHT parameter specify the size in"+
+					" integer pixels of the map to be produced.");
+				else if(name=="Exceptions:") $('#wms_help_box').html(
+					"<label style='font-weight:bold'>Exceptions:</label>"+
+					"<br/>The EXCEPTIONS parameter states the format in "+
+					"which to report errors.");
+				else if(name=="Format:") $('#wms_help_box').html(
+					"<label style='font-weight:bold'>Format:</label>"+
+					"<br/>The FORMAT parameter specifies the output format"+
+					" of the response to an operation.");
+				else if(name=="Transparent:") $('#wms_help_box').html(
+					"<label style='font-weight:bold'>Transparent:</label>"+
+					"<br/>The TRANSPARENT parameter specifies whether the "+
+					"map background is to be made transparent or not. ");
+				else if(name=="Background color:") $('#wms_help_box').html(
+					"<label style='font-weight:bold'>Background color:"+
+					"</label><br/>The BACKGROUND COLOR parameter is a string "+
+					"that specifies the colour to be used as the background "+
+					"(non-data) pixels of the map.");
+				else if(name=="Dimensions:") $('#wms_help_box').html(
+					"<label style='font-weight:bold'>Dimensions: </label>"+
+					"<br/>The TIME dimension is defined if a data object has "+
+					"one (for example, an hourly weather map).The ELEVATION "+
+					"dimension is defined if a data object has one "+
+					"(for example, elevation in meters in the North American"+
+						" Vertical Datum 1988).Sample dimension parameters"+
+					" allow the client to request a particular layer along "+
+					"one or more dimensional axes other than time or"+
+					" elevation.");
+			});
+
+
+
+			$("#wms_style_value"+index).on('click',function(){
+
+				var strUser = this.options[this.selectedIndex].value;
+				if(isArray(WMSLayers[index].Style)){
+					for(var q = 0; q < WMSLayers[index].Style.length; q++){
+					if(WMSLayers[index].style[q].name==strUser) break;
+				};
+
+				$("#wms_help_box").html("<label style='font-weight:bold'>"+
+					"Selected Style:</label><br/><label style='font-weight:"+
+					"bold'> Title:</label>" + WMSLayers[index].Style[q]
+					.Title['#text'] +
+					 "<br><label style='font-weight:bold'> Abstract:</label>" + 
+					 WMSLayers[index].Style[q].Abstract['#text']+
+					  "<br><label style="+
+					 "'font-weight:bold'> Legend URL width/height:</label>" + 
+					 WMSLayers[index].Style[q]
+					 .LegendURL['@attributes'].width + "/" + 
+					 WMSLayers[index].Style[q]
+					 .LegendURL['@attributes'].height + "<br><label "+
+					 "style='font-weight:bold'> Legend URL format:</label>" +
+					  WMSLayers[index].Style[q].LegendURL
+					  .Format['#text']+ "<br><label"+
+					  " style='font-weight:bold'> Legend URL online resource:"+
+					  "</label>" + 
+					  WMSLayers[index].Style[q].LegendURL
+					  .OnlineResource['@attributes']['xlink:href'] +
+					   "<br>");
+				}
+				else if(WMSLayers[index].Style){
+
+				$("#wms_help_box").html("<label style='font-weight:bold'>"+
+					"Selected Style:</label><br/><label style='font-weight:"+
+					"bold'> Title:</label>" + WMSLayers[index]
+					.Style.Title['#text'] +
+					 "<br><label style='font-weight:bold'> Abstract:</label>" + 
+					 WMSLayers[index].Style.Abstract['#text']+
+					  "<br><label style="+
+					 "'font-weight:bold'> Legend URL width/height:</label>" + 
+					 WMSLayers[index].Style
+					 .LegendURL['@attributes'].width + "/" + 
+					 WMSLayers[index].Style
+					 .LegendURL['@attributes'].height + "<br><label "+
+					 "style='font-weight:bold'> Legend URL format:</label>" +
+					  WMSLayers[index].Style.LegendURL
+					  .Format['#text']+ "<br><label"+
+					  " style='font-weight:bold'> Legend URL online resource:"+
+					  "</label>" + 
+					  WMSLayers[index].Style.LegendURL
+					  .OnlineResource['@attributes']['xlink:href'] +
+					   "<br>");
+				}
+				else{
+					$("#wms_help_box").html("empty property!")
+				}
+				
+			});
+
+
+			$("#wms_crs_value"+index).on('click',function(){
+				var strUser = this.options[this.selectedIndex].value;
+				var q = 0;
+				do {
+					if (WMSLayers[index].BoundingBox[q]['@attributes'].CRS ==
+						strUser){
+						$("#wms_help_box").html("<label style="+
+							"'font-weight:bold'>Selected CRS :</label><br/>"+
+							"<label style='font-weight:bold'> minx:</label>" + 
+							WMSLayers[index].BoundingBox[q]['@attributes'].minx+
+							"<br>"+
+							"<label style='font-weight:bold'> miny:</label>" +
+							WMSLayers[index].BoundingBox[q]['@attributes'].miny+
+							"<br>"+
+							"<label style='font-weight:bold'> maxx:</label>" +
+							WMSLayers[index].BoundingBox[q]['@attributes'].maxx+
+							"<br>"+
+							"<label style='font-weight:bold'> maxy:</label>" +
+							WMSLayers[index].BoundingBox[q]['@attributes'].maxy
+						);
+						break;
+					};
+					q++;
+				} while(q < WMSLayers[index].boundingbox.length);
+			});
+
+
+			var styles = {
+				margin:"0px",
+				height:"100%",
+				width: "100%",
+				border:"none"
+			};
+			var styleswh = {
+				margin:"0px",
+				height:"100%",
+				width: "40%",
+				border:"none",
+				textAlign:"center",
+				outline:"1px solid #d2d2d2"
+			};
+			details.find("input").css(styles);
+			details.find("select").css(styles);
+			details.find("div").css(styles);
+			$("#wms_width_value"+index).css(styleswh);
+			$("#wms_height_value"+index).css(styleswh);
+		};
+
+		//set the parameters for jqxGrid
+		source = {
+			datatype  : 'json',
+			datafields: [
+				{
+					name: 'Name',
+					type: 'string',
+					map : 'Name>#text'
+				},
+				{
+					name: 'Title',
+					type: 'string',
+					map: 'Title>#text'
+				}
+			],
+			localdata: WMSLayers
+		};
+		dataAdapter = new $.jqx.dataAdapter(source);
+
+		$("#wms_layers").jqxGrid({
+			width: "100%",
+			height:"100%",
+			pageable:true,
+			theme:"office",
+			source: dataAdapter,
+			altrows: true,
+			altstart: 0,
+			rowdetails:true,
+			rowdetailstemplate: {
+				rowdetails: "<div></div>"
+			},
+			initrowdetails: initlevel2,
+			columns: [
+				{ text: 'Name', datafield: 'Name', width: "50%"},
+				{ text: 'Title', datafield: 'Title', width: "50%"}
+			]
+		});
+	};
+	//row click events
+	$('#wms_layers').on('rowclick', function (event){
+		var args = event.args;
+		// row's bound index.
+		var boundIndex = args.rowindex;
+		$("#wms_help_box").html("<label style='font-weight:"+
+			"bold'>Abstract:</label><br/>"+WMSLayers[boundIndex].abstract);
+		// row's visible index.
+		var visibleIndex = args.visibleindex;
+		// right click.
+		var rightclick = args.rightclick;
+		var ev = args.originalEvent;
+	});
+	$(window).trigger('resize');
+}

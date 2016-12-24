@@ -1,0 +1,7 @@
+<web-app version="3.0">
+	<display-name>Javascript WPS Client | #4bc1467 as of 20151209173238, build at 20160707-1827</display-name>
+	
+	<welcome-file-list>
+		<welcome-file>/example.html</welcome-file>
+	</welcome-file-list>
+</web-app>

@@ -1,1 +1,1 @@
-The GEOSAAS project is an open source free software prototype application that synthesizes geospatial web services into a web application published under the  GNU General Public License v3+. A live demo can be found here hhtp://gws-hydris.rhcloud.com
+The GEOSAAS project is an open source free software prototype application that synthesizes geospatial web services into a web application published under the  GNU General Public License v3+. A live demo can be found here http://gws-hydris.rhcloud.com
